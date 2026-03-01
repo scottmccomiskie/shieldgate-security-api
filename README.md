@@ -1,5 +1,4 @@
-# shieldgate-security-api
-Java Spring Boot backend API for secure authentication, account abuse detection, rate limiting, and audit logging, deployed to Azure.
+
 # ShieldGate Security API
 
 ShieldGate is a Java Spring Boot backend API focused on secure authentication, account abuse detection, rate limiting, and audit logging.  
