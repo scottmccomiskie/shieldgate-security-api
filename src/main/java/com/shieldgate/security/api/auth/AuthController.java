@@ -24,10 +24,12 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
     /**
      * Endpoint: POST /api/v1/auth/register
@@ -47,10 +49,12 @@ public class AuthController {
             );
 
             if (!passwordMatches) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Password");
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
             }
 
-            return new LoginResponse("Login successful");
+            String token = jwtService.generateToken(user.getEmail());
+
+            return new LoginResponse(token);
 
 
         }
@@ -75,7 +79,7 @@ public class AuthController {
 
         // For bow we just simulate sucess
         return new RegisterResponse(
-            "user registered sucesscully with email" + request.getEmail()
+            "user registered successful with email" + request.getEmail()
         );
 
 
