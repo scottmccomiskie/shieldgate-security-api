@@ -2,18 +2,17 @@ package com.shieldgate.security.api.auth;
 
 
 import java.io.IOException;
+import com.shieldgate.security.api.user.User;
+import com.shieldgate.security.api.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter  extends OncePerRequestFilter {
@@ -24,15 +23,15 @@ public class JwtAuthenticationFilter  extends OncePerRequestFilter {
     private final JwtService jwtService;
 
     // dependency 2: load the user from the database maybe
-    private final UserDetailsService userDetailsService;
+    private final UserRepository userRepository;
 
     // this is the constructor using the above dependencies
     public JwtAuthenticationFilter (
             JwtService jwtService,
-            UserDetailsService userDetailsService
+            UserRepository userRepository
     ) {
         this.jwtService = jwtService;
-        this.userDetailsService = userDetailsService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -77,19 +76,19 @@ public class JwtAuthenticationFilter  extends OncePerRequestFilter {
 
             //STEP 6
             // Load the user from the database using the email from the token
-            UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+           User user = userRepository.findByEmail(userEmail).orElse(null);
 
             //STEP 7
             // Check of the token is valid for this user
-            if (jwtService.isTokenValid(jwt, userDetails)) {
+            if (jwtService.isTokenValid(jwt, user)) {
 
                 //STEP 8:
                 // Create an authentication object for spring security
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
-                                userDetails,
+                                user,
                                 null,
-                                userDetails.getAuthorities()
+                                user.getAuthorities()
                         );
 
                 //STEP 9

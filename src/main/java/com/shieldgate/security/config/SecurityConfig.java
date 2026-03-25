@@ -20,20 +20,19 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        System.out.println(">>> MY SECURITY FILTER CHAIN LOADED");
+
         http
                 .csrf(csrf -> csrf.disable())
-
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/register").permitAll()
                         .requestMatchers("/api/v1/auth/login").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .anyRequest().authenticated()
                 )
-
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.disable())
                 )
-
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
