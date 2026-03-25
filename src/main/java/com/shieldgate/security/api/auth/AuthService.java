@@ -1,94 +1,110 @@
 package com.shieldgate.security.api.auth;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
-import com.shieldgate.security.api.user.User;
-import com.shieldgate.security.api.user.UserRepository;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import com.shieldgate.security.api.auth.dto.LoginRequest;
-import com.shieldgate.security.api.auth.dto.LoginResponse;
-import com.shieldgate.security.api.auth.dto.RegisterRequest;
-import com.shieldgate.security.api.auth.dto.RegisterResponse;
 
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.function.Function;
+
+import org.springframework.security.core.userdetails.UserDetails;
+
+/**
+ * JwtService handles:
+ * - generating JWT tokens
+ * - extracting data from tokens
+ * - validating tokens
+ *
+ * This is a core part of authentication in the system.
+ */
 @Service
-public class AuthService {
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
+public class JwtService {
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtService jwtService) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtService = jwtService;
+    // Secret key used to sign and verify JWT tokens
+    // Loaded from application.properties
+    private final SecretKey secretKey;
+
+    // Token expiration time (e.g. 1 hour)
+    private final long jwtExpiration;
+
+    /**
+     * Constructor
+     * Converts the raw secret string into a cryptographic key
+     */
+    public JwtService(
+            @Value("${jwt.secret}") String secret,
+            @Value("${jwt.expiration}") long jwtExpiration
+    ) {
+        this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.jwtExpiration = jwtExpiration;
     }
 
-    // find user by email or return 401 if not found
-    public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Credentials"));
-
-
-        // Prevent login if account is locked
-        if (user.isAccountLocked()) {
-            throw new ResponseStatusException(HttpStatus.LOCKED, "Account is locked");
-        }
-
-        // Compare raw password with hashed password in database
-        boolean passwordMatches = passwordEncoder.matches(
-                request.getPassword(),
-                user.getPassword()
-        );
-
-        // Handle failed login attempts
-        if (!passwordMatches) {
-            user.setFailedLoginAttempts(user.getFailedLoginAttempts() + 1);
-
-            // Lock account after 5 failed attempts
-            if (user.getFailedLoginAttempts()>= 5){
-                user.setAccountLocked(true);
-            }
-
-            userRepository.save(user);
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid Credentials");
-        }
-
-        // Reset failed attempts on successful login
-        user.setFailedLoginAttempts(0);
-        user.setAccountLocked(false);
-        userRepository.save(user);
-
-        // Generate JWT token for authenticated user
-        String token = jwtService.generateToken(user.getEmail());
-
-        return new LoginResponse(token);
-
+    /**
+     * Extracts the username (email) from the token
+     * The "subject" field in JWT = user identity
+     */
+    public String extractUsername(String token) {
+        return extractClaim(token, Claims::getSubject);
     }
 
-    public RegisterResponse register(RegisterRequest request) {
-        // Prevent duplicate email registration
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered");
-        }
-
-        // hash password before storing
-        String hashedPassword = passwordEncoder.encode(request.getPassword());
-
-        // Create new user entity
-        User user = new User(
-                request.getEmail(),
-                hashedPassword
-        );
-
-        // save user to database
-        userRepository.save(user);
-
-        // returns success message
-        return new RegisterResponse(
-                "user registered successfully with email" + request.getEmail());
-
+    /**
+     * Generic method to extract any claim from the token
+     * Example claims: subject, expiration, issuedAt
+     */
+    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+        Claims claims = extractAllClaims(token);
+        return claimsResolver.apply(claims);
     }
 
+    /**
+     * Parses the JWT and retrieves all claims (data inside token)
+     * Also verifies the token signature using the secret key
+     */
+    private Claims extractAllClaims(String token) {
+        return Jwts.parser()
+                .setSigningKey(secretKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
 
+    /**
+     * Generates a new JWT token for a user
+     *
+     * - subject = email (user identity)
+     * - issuedAt = current time
+     * - expiration = now + configured time
+     */
+    public String generateToken(String email) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtExpiration);
 
+        return Jwts.builder()
+                .subject(email)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(secretKey)
+                .compact();
+    }
+
+    /**
+     * Validates the token:
+     * - checks username matches
+     * - checks token is not expired
+     */
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        final String username = extractUsername(token);
+        return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
+    }
+
+    /**
+     * Checks if token has expired
+     */
+    private boolean isTokenExpired(String token) {
+        return extractClaim(token, Claims::getExpiration).before(new Date());
+    }
 }
